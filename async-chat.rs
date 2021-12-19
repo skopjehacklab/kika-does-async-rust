@@ -1,9 +1,9 @@
 #![allow(unused_variables)]
 
-use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net;
 use tokio::sync::broadcast;
+use tokio_stream::StreamExt;
 
 #[tokio::main]
 async fn main() {
@@ -25,17 +25,18 @@ async fn process_client(mut socket: net::TcpStream, addr: std::net::SocketAddr, 
     let mut receiver = sender.subscribe();
 
     let (reader, mut writer) = socket.split();
-    let mut reader = tokio::io::BufReader::new(reader);
+    let codec = tokio_util::codec::LinesCodec::new_with_max_length(1024);
+    let mut reader = tokio_util::codec::FramedRead::new(reader, codec);
 
     loop {
-        let mut line = String::with_capacity(1024); // [u8]
+        // let mut line = String::with_capacity(1024);
 
         tokio::select! {
 
-            r = reader.read_line(&mut line) => match r {
-                Err(_) => break,
-                Ok(0) => break,
-                Ok(_) => {
+            line = reader.next() => match line {
+                None => break,
+                Some(Err(_)) => break,
+                Some(Ok(line)) => {
                     sender.send(format!("{}: {}", addr, line.clone())).unwrap();
                     continue;
                 },
